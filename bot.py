@@ -23,7 +23,7 @@ from telegram.ext import (
 )
 
 # ====== SOZLAMALAR (shu yerga o'zingiznikini yozing) ======
-BOT_TOKEN = "BU_YERGA_BOTFATHER_TOKENINI_QOYING"
+BOT_TOKEN = "8057506323:AAFydu8hAkLjj26MSHWSYr3RwySOcou3iLs"
 API_BASE = "http://localhost:8000"   # backend server manzili
 # =============================================================
 
