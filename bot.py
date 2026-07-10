@@ -24,7 +24,7 @@ from telegram.ext import (
 
 # ====== SOZLAMALAR (shu yerga o'zingiznikini yozing) ======
 BOT_TOKEN = "8057506323:AAFydu8hAkLjj26MSHWSYr3RwySOcou3iLs"
-API_BASE = "http://localhost:8000"   # backend server manzili
+API_BASE = "https://barberman-api-23cb.onrender.com"   # backend server manzili
 # =============================================================
 
 logging.basicConfig(level=logging.INFO)
