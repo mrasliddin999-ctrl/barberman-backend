@@ -10,8 +10,11 @@ ISHGA TUSHIRISH:
 """
 
 import logging
+import os
+import threading
 import requests
 from datetime import datetime, timedelta
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -19,7 +22,7 @@ from telegram.ext import (
 )
 
 # ====== SOZLAMALAR (shu yerga o'zingiznikini yozing) ======
-BOT_TOKEN = "8057506323:AAFydu8hAkLjj26MSHWSYr3RwySOcou3iLsS"
+BOT_TOKEN = "8057506323:AAFydu8hAkLjj26MSHWSYr3RwySOcou3iLs"
 API_BASE = "http://localhost:8000"   # backend server manzili
 # =============================================================
 
@@ -158,7 +161,27 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot ishlayapti")
+
+    def log_message(self, format, *args):
+        pass  # keraksiz loglarni o'chirish
+
+
+def _run_fake_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    server.serve_forever()
+
+
 def main():
+    # Render "web service" portni tinglashni talab qiladi, shuning uchun
+    # fon rejimida kichik soxta server ishga tushiramiz
+    threading.Thread(target=_run_fake_server, daemon=True).start()
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
