@@ -11,6 +11,7 @@ ISHGA TUSHIRISH:
 
 import logging
 import os
+import asyncio
 import threading
 import requests
 from datetime import datetime, timedelta
@@ -22,7 +23,7 @@ from telegram.ext import (
 )
 
 # ====== SOZLAMALAR (shu yerga o'zingiznikini yozing) ======
-BOT_TOKEN = "8057506323:AAFydu8hAkLjj26MSHWSYr3RwySOcou3iLs"
+BOT_TOKEN = "BU_YERGA_BOTFATHER_TOKENINI_QOYING"
 API_BASE = "http://localhost:8000"   # backend server manzili
 # =============================================================
 
@@ -182,6 +183,10 @@ def main():
     # fon rejimida kichik soxta server ishga tushiramiz
     threading.Thread(target=_run_fake_server, daemon=True).start()
 
+    asyncio.run(run_bot())
+
+
+async def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
@@ -198,7 +203,14 @@ def main():
 
     app.add_handler(conv_handler)
     print("Bot ishga tushdi...")
-    app.run_polling()
+
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+
+    # dastur to'xtatilmaguncha ishlab tursin
+    stop_event = asyncio.Event()
+    await stop_event.wait()
 
 
 if __name__ == "__main__":
