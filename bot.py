@@ -13,6 +13,7 @@ import logging
 import os
 import asyncio
 import threading
+import time
 import requests
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -36,16 +37,49 @@ CHOOSE_SERVICE, CHOOSE_DATE, CHOOSE_TIME, ENTER_NAME, ENTER_PHONE = range(5)
 DOW_UZ = ['Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan', 'Yak']
 
 
+def api_get_with_retry(path, params=None, retries=4, delay=3):
+    """Backend server uxlab qolgan bo'lishi mumkin - shuning uchun bir necha marta qayta urinamiz"""
+    last_error = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(f"{API_BASE}{path}", params=params, timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            last_error = e
+            time.sleep(delay)
+    raise last_error
+
+
+def api_post_with_retry(path, json_data, retries=4, delay=3):
+    last_error = None
+    for attempt in range(retries):
+        try:
+            resp = requests.post(f"{API_BASE}{path}", json=json_data, timeout=15)
+            return resp
+        except Exception as e:
+            last_error = e
+            time.sleep(delay)
+    raise last_error
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    resp = requests.get(f"{API_BASE}/services")
-    services = resp.json()
+    wait_msg = await update.message.reply_text("Bir necha soniya kuting...")
+    try:
+        services = api_get_with_retry("/services")
+    except Exception:
+        await wait_msg.edit_text(
+            "Serverga ulanib bo'lmadi. Birozdan so'ng qayta /start bosing."
+        )
+        return ConversationHandler.END
+
     context.user_data["services"] = services
 
     buttons = [
         [InlineKeyboardButton(f"{s['name']} ({s['dur']} daq)", callback_data=f"svc:{sid}")]
         for sid, s in services.items()
     ]
-    await update.message.reply_text(
+    await wait_msg.edit_text(
         "Assalomu alaykum! BarberMan navbat botiga xush kelibsiz.\n\n"
         "Qaysi xizmatni tanlaysiz?\n\n"
         "(Mavjud navbatni bekor qilish uchun /bekor buyrug'ini yozing)",
@@ -82,8 +116,13 @@ async def choose_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["date"] = date_str
 
     service_id = context.user_data["service_id"]
-    resp = requests.get(f"{API_BASE}/slots", params={"date": date_str, "service_id": service_id})
-    data = resp.json()
+    try:
+        data = api_get_with_retry("/slots", params={"date": date_str, "service_id": service_id})
+    except Exception:
+        await query.edit_message_text(
+            "Serverga ulanib bo'lmadi. /start bosib qayta urining."
+        )
+        return ConversationHandler.END
     slots = data["slots"]
 
     free_slots = [s for s in slots if not s["taken"]]
@@ -140,7 +179,13 @@ async def enter_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "time": ud["time"],
         "source": "bot",
     }
-    resp = requests.post(f"{API_BASE}/bookings", json=payload)
+    try:
+        resp = api_post_with_retry("/bookings", payload)
+    except Exception:
+        await update.message.reply_text(
+            "Serverga ulanib bo'lmadi. /start bosib qayta urining."
+        )
+        return ConversationHandler.END
 
     if resp.status_code == 200:
         data = resp.json()
@@ -188,7 +233,13 @@ async def cancel_enter_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code = update.message.text.strip()
     phone = context.user_data.get("cancel_phone", "")
 
-    resp = requests.post(f"{API_BASE}/bookings/cancel", json={"phone": phone, "cancel_code": code})
+    try:
+        resp = api_post_with_retry("/bookings/cancel", {"phone": phone, "cancel_code": code})
+    except Exception:
+        await update.message.reply_text(
+            "Serverga ulanib bo'lmadi. Birozdan so'ng /bekor bosib qayta urining."
+        )
+        return ConversationHandler.END
 
     if resp.status_code == 200:
         await update.message.reply_text(
