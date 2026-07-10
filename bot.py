@@ -47,7 +47,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text(
         "Assalomu alaykum! BarberMan navbat botiga xush kelibsiz.\n\n"
-        "Qaysi xizmatni tanlaysiz?",
+        "Qaysi xizmatni tanlaysiz?\n\n"
+        "(Mavjud navbatni bekor qilish uchun /bekor buyrug'ini yozing)",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
     return CHOOSE_SERVICE
@@ -142,12 +143,16 @@ async def enter_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     resp = requests.post(f"{API_BASE}/bookings", json=payload)
 
     if resp.status_code == 200:
+        data = resp.json()
+        code = data.get("cancel_code", "----")
         d = datetime.strptime(ud["date"], "%Y-%m-%d")
         await update.message.reply_text(
             f"Navbat qabul qilindi!\n\n"
             f"Xizmat: {svc_name}\n"
             f"Sana: {d.day:02d}.{d.month:02d}.{d.year}\n"
             f"Vaqt: {ud['time']}\n\n"
+            f"Bekor qilish kodingiz: {code}\n"
+            f"(Navbatni bekor qilish uchun /bekor buyrug'ini bosing va shu kodni kiriting)\n\n"
             f"Kutib qolamiz! Yangi navbat uchun /start bosing."
         )
     else:
@@ -159,6 +164,46 @@ async def enter_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Bekor qilindi. Qayta boshlash uchun /start bosing.")
+    return ConversationHandler.END
+
+
+# ---------- navbatni bekor qilish suhbati ----------
+CANCEL_PHONE, CANCEL_CODE = range(100, 102)
+
+
+async def cancel_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Navbatni bekor qilish uchun telefon raqamingizni yozing:"
+    )
+    return CANCEL_PHONE
+
+
+async def cancel_enter_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["cancel_phone"] = update.message.text.strip()
+    await update.message.reply_text("Navbat olganda sizga berilgan 6 xonali kodni yozing:")
+    return CANCEL_CODE
+
+
+async def cancel_enter_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    code = update.message.text.strip()
+    phone = context.user_data.get("cancel_phone", "")
+
+    resp = requests.post(f"{API_BASE}/bookings/cancel", json={"phone": phone, "cancel_code": code})
+
+    if resp.status_code == 200:
+        await update.message.reply_text(
+            "Navbatingiz bekor qilindi. Yangi navbat olish uchun /start bosing."
+        )
+    else:
+        await update.message.reply_text(
+            "Bunday navbat topilmadi. Telefon raqami yoki kod noto'g'ri. "
+            "Qayta urinish uchun /bekor bosing."
+        )
+    return ConversationHandler.END
+
+
+async def cancel_abort(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bekor qilish jarayoni to'xtatildi.")
     return ConversationHandler.END
 
 
@@ -201,7 +246,17 @@ async def run_bot():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    cancel_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("bekor", cancel_start)],
+        states={
+            CANCEL_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, cancel_enter_phone)],
+            CANCEL_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, cancel_enter_code)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_abort)],
+    )
+
     app.add_handler(conv_handler)
+    app.add_handler(cancel_conv_handler)
     print("Bot ishga tushdi...")
 
     await app.initialize()

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from datetime import datetime, date as date_cls
 import sqlite3
 import os
+import random
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "barberman.db")
 
@@ -54,11 +55,21 @@ def init_db():
             date TEXT NOT NULL,
             time TEXT NOT NULL,
             source TEXT DEFAULT 'site',
+            cancel_code TEXT,
             created_at TEXT NOT NULL
         )
     """)
+    # eski bazalarda cancel_code ustuni bo'lmasligi mumkin - qo'shib qo'yamiz
+    try:
+        conn.execute("ALTER TABLE bookings ADD COLUMN cancel_code TEXT")
+    except sqlite3.OperationalError:
+        pass  # ustun allaqachon bor
     conn.commit()
     conn.close()
+
+
+def generate_cancel_code():
+    return str(random.randint(100000, 999999))
 
 
 init_db()
@@ -148,16 +159,18 @@ def create_booking(b: BookingIn):
         conn.close()
         raise HTTPException(409, "Bu vaqt band qilib bo'lingan, boshqa vaqt tanlang")
 
+    cancel_code = generate_cancel_code()
+
     cur = conn.execute(
-        """INSERT INTO bookings (name, phone, service_id, service_name, duration, date, time, source, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (b.name, b.phone, b.service_id, svc["name"], svc["dur"], b.date, b.time, b.source,
+        """INSERT INTO bookings (name, phone, service_id, service_name, duration, date, time, source, cancel_code, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (b.name, b.phone, b.service_id, svc["name"], svc["dur"], b.date, b.time, b.source, cancel_code,
          datetime.now().isoformat())
     )
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
-    return {"id": new_id, "message": "Navbat qabul qilindi"}
+    return {"id": new_id, "cancel_code": cancel_code, "message": "Navbat qabul qilindi"}
 
 
 @app.get("/bookings")
@@ -168,6 +181,30 @@ def list_bookings():
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+class CancelIn(BaseModel):
+    phone: str
+    cancel_code: str
+
+
+@app.post("/bookings/cancel")
+def cancel_booking(c: CancelIn):
+    """Klient o'z telefon raqami va kodi orqali navbatini bekor qiladi"""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM bookings WHERE phone = ? AND cancel_code = ?",
+        (c.phone, c.cancel_code)
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        raise HTTPException(404, "Bunday navbat topilmadi. Telefon raqami yoki kod noto'g'ri")
+
+    conn.execute("DELETE FROM bookings WHERE id = ?", (row["id"],))
+    conn.commit()
+    conn.close()
+    return {"message": "Navbat bekor qilindi", "booking": dict(row)}
 
 
 @app.delete("/bookings/{booking_id}")
