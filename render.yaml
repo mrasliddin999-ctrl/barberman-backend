@@ -1,0 +1,16 @@
+services:
+  # Backend API server
+  - type: web
+    name: barberman-api
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+
+  # Telegram bot (background worker)
+  - type: worker
+    name: barberman-bot
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python bot.py"
