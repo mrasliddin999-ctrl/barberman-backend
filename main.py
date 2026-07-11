@@ -64,6 +64,15 @@ def init_db():
         conn.execute("ALTER TABLE bookings ADD COLUMN cancel_code TEXT")
     except sqlite3.OperationalError:
         pass  # ustun allaqachon bor
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            phone TEXT PRIMARY KEY,
+            chat_id TEXT,
+            last_booking_date TEXT,
+            last_reminder_date TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -82,6 +91,7 @@ class BookingIn(BaseModel):
     date: str   # YYYY-MM-DD
     time: str   # HH:MM
     source: str = "site"  # "site" yoki "bot"
+    chat_id: str | None = None  # bot orqali kelganda Telegram chat_id
 
 
 def time_to_min(t: str) -> int:
@@ -167,6 +177,29 @@ def create_booking(b: BookingIn):
         (b.name, b.phone, b.service_id, svc["name"], svc["dur"], b.date, b.time, b.source, cancel_code,
          datetime.now().isoformat())
     )
+
+    # klient jadvalini yangilaymiz - yangi navbat sanasi va (agar bot bo'lsa) chat_id
+    if b.chat_id:
+        conn.execute(
+            """INSERT INTO clients (phone, chat_id, last_booking_date, last_reminder_date)
+               VALUES (?, ?, ?, NULL)
+               ON CONFLICT(phone) DO UPDATE SET
+                   chat_id = excluded.chat_id,
+                   last_booking_date = excluded.last_booking_date,
+                   last_reminder_date = NULL""",
+            (b.phone, b.chat_id, b.date)
+        )
+    else:
+        # sayt orqali kelgan bo'lsa ham sanani yangilaymiz, lekin chat_id bo'lmasa eslatma yuborib bo'lmaydi
+        conn.execute(
+            """INSERT INTO clients (phone, chat_id, last_booking_date, last_reminder_date)
+               VALUES (?, NULL, ?, NULL)
+               ON CONFLICT(phone) DO UPDATE SET
+                   last_booking_date = excluded.last_booking_date,
+                   last_reminder_date = NULL""",
+            (b.phone, b.date)
+        )
+
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -219,3 +252,65 @@ def delete_booking(booking_id: int):
 @app.get("/")
 def root():
     return {"status": "BarberMan API ishlayapti"}
+
+
+REMINDER_DAYS = 20
+
+
+@app.get("/reminders/due")
+def get_due_reminders():
+    """
+    Oxirgi navbatidan REMINDER_DAYS kun o'tgan, chat_id borligi va
+    hali shu davr uchun eslatma yuborilmagan klientlar ro'yxati
+    """
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT phone, chat_id, last_booking_date, last_reminder_date
+           FROM clients
+           WHERE chat_id IS NOT NULL AND last_booking_date IS NOT NULL"""
+    ).fetchall()
+    conn.close()
+
+    today = datetime.now().date()
+    due = []
+    for r in rows:
+        last_booking = datetime.strptime(r["last_booking_date"], "%Y-%m-%d").date()
+        days_passed = (today - last_booking).days
+
+        if days_passed < REMINDER_DAYS:
+            continue  # hali vaqti kelmagan
+
+        # agar shu last_booking_date uchun eslatma allaqachon yuborilgan bo'lsa - o'tkazib yuboramiz
+        if r["last_reminder_date"] == r["last_booking_date"]:
+            continue
+
+        due.append({
+            "phone": r["phone"],
+            "chat_id": r["chat_id"],
+        })
+
+    return {"due": due}
+
+
+class ReminderSentIn(BaseModel):
+    phone: str
+
+
+@app.post("/reminders/mark-sent")
+def mark_reminder_sent(r: ReminderSentIn):
+    """Eslatma yuborilgach, shu klientning joriy last_booking_date siga qarab belgilaymiz"""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT last_booking_date FROM clients WHERE phone = ?", (r.phone,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "Klient topilmadi")
+
+    conn.execute(
+        "UPDATE clients SET last_reminder_date = ? WHERE phone = ?",
+        (row["last_booking_date"], r.phone)
+    )
+    conn.commit()
+    conn.close()
+    return {"message": "Belgilandi"}

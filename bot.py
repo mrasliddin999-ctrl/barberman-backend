@@ -178,6 +178,7 @@ async def enter_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "date": ud["date"],
         "time": ud["time"],
         "source": "bot",
+        "chat_id": str(update.effective_chat.id),
     }
     try:
         resp = api_post_with_retry("/bookings", payload)
@@ -282,6 +283,35 @@ def main():
     asyncio.run(run_bot())
 
 
+REMINDER_TEXT = (
+    "Soch turmagingizni yangilash vaqti kelib qoldi. "
+    "Sizni Dinamo barbershop da kutib qolamiz! "
+    "Online navbat olish esdan chiqmasin!"
+)
+
+REMINDER_CHECK_INTERVAL = 6 * 60 * 60  # har 6 soatda tekshiradi (soniyada)
+
+
+async def reminder_loop(app):
+    """Fonda ishlab, kerakli klientlarga eslatma yuboradi"""
+    while True:
+        try:
+            data = api_get_with_retry("/reminders/due", retries=1, delay=0)
+            due_list = data.get("due", [])
+            for item in due_list:
+                chat_id = item["chat_id"]
+                phone = item["phone"]
+                try:
+                    await app.bot.send_message(chat_id=chat_id, text=REMINDER_TEXT)
+                    api_post_with_retry("/reminders/mark-sent", {"phone": phone}, retries=2, delay=2)
+                except Exception as e:
+                    print(f"Eslatma yuborishda xato ({phone}): {e}")
+        except Exception as e:
+            print(f"Reminder tekshiruvida xato: {e}")
+
+        await asyncio.sleep(REMINDER_CHECK_INTERVAL)
+
+
 async def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -313,6 +343,9 @@ async def run_bot():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
+
+    # eslatma yuborish vazifasini fonda ishga tushiramiz
+    asyncio.create_task(reminder_loop(app))
 
     # dastur to'xtatilmaguncha ishlab tursin
     stop_event = asyncio.Event()
