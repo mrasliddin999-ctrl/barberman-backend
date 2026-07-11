@@ -257,6 +257,7 @@ def delete_booking(booking_id: int):
 
 
 @app.get("/")
+@app.head("/")
 def root():
     return {"status": "BarberMan API ishlayapti"}
 
