@@ -8,10 +8,17 @@ BarberMan backend server
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime, date as date_cls
+from datetime import datetime, date as date_cls, timezone, timedelta
 import sqlite3
 import os
 import random
+
+# O'zbekiston vaqti (UTC+5) - server odatda UTC bilan ishlaydi
+TASHKENT_TZ = timezone(timedelta(hours=5))
+
+
+def now_tashkent():
+    return datetime.now(TASHKENT_TZ)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "barberman.db")
 
@@ -128,7 +135,7 @@ def get_slots(date: str, service_id: str):
     conn.close()
     existing = [{"time": r["time"], "duration": r["duration"]} for r in rows]
 
-    now = datetime.now()
+    now = now_tashkent()
     is_today = date == now.strftime("%Y-%m-%d")
     now_min = now.hour * 60 + now.minute
 
@@ -175,7 +182,7 @@ def create_booking(b: BookingIn):
         """INSERT INTO bookings (name, phone, service_id, service_name, duration, date, time, source, cancel_code, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (b.name, b.phone, b.service_id, svc["name"], svc["dur"], b.date, b.time, b.source, cancel_code,
-         datetime.now().isoformat())
+         now_tashkent().isoformat())
     )
 
     # klient jadvalini yangilaymiz - yangi navbat sanasi va (agar bot bo'lsa) chat_id
@@ -271,7 +278,7 @@ def get_due_reminders():
     ).fetchall()
     conn.close()
 
-    today = datetime.now().date()
+    today = now_tashkent().date()
     due = []
     for r in rows:
         last_booking = datetime.strptime(r["last_booking_date"], "%Y-%m-%d").date()
