@@ -2,8 +2,15 @@
 <html lang="uz">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>BarberMan — Onlayn navbat</title>
+
+<!-- iOS Safari: ekranga qo'shilganda ilova kabi ochilishi uchun -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BarberMan">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23141414'/%3E%3Ctext x='50' y='68' font-size='55' text-anchor='middle' fill='%23d4a24c'%3E%E2%9C%82%EF%B8%8F%3C/text%3E%3C/svg%3E">
+
 <style>
   :root{
     --bg:#141414;
@@ -28,6 +35,7 @@
   header{
     background:var(--panel);
     padding:22px 20px;
+    padding-top:calc(22px + env(safe-area-inset-top));
     text-align:center;
     border-bottom:1px solid var(--border);
     position:sticky;top:0;z-index:10;
